@@ -11,8 +11,10 @@ export const maxDuration = 300
 // 三种模式本质不同：温柔=最小化心理损耗 / 理性=最大化期望收益 / 严厉=最小化决策错误
 type DecisionMode = 'gentle' | 'rational' | 'strict'
 
-function detectMode(diagnosis: { emotion?: string; trapDetected?: boolean }): DecisionMode {
+function detectMode(diagnosis: { emotion?: string; trapDetected?: boolean; urgency?: string }): DecisionMode {
   if (diagnosis.trapDetected) return 'strict'         // 检测到认知陷阱 → 偏差纠正
+  // Issue 15: 高情绪 + 高紧迫 → 需要清醒分析，不是情绪缓冲
+  if (diagnosis.emotion === '重' && diagnosis.urgency === '高') return 'rational'
   if (diagnosis.emotion === '重') return 'gentle'     // 情绪负荷高 → 风险缓冲
   return 'rational'                                   // 默认 → 最优解引擎
 }
@@ -48,7 +50,7 @@ const MODE_LABEL: Record<DecisionMode, { label: string; desc: string; color: str
 }
 
 export async function POST(request: NextRequest) {
-  const { input, diagnosis, probeAnswers, tier = 'free', byokConfig, outputMode = 'detailed', targetAdvisors, historyContext } = await request.json()
+  const { input, diagnosis, probeAnswers, tier = 'free', byokConfig, outputMode = 'detailed', targetAdvisors, historyContext, userProfile } = await request.json()
 
   const config = getEngineConfig(tier, byokConfig)
   // targetAdvisors overrides routing (used for @ mentions)
@@ -67,6 +69,14 @@ export async function POST(request: NextRequest) {
   // Build context — include core question, system-extracted facts, and probe Q&A
   // 模式算法前置注入：让所有顾问共享同一套决策目标函数
   let context = MODE_PREAMBLE[mode] + `\n\n核心决策问题：${diagnosis.coreQuestion}\n\n用户原始描述：\n${input}\n`
+
+  // 注入用户基本背景（姓名 + 职业身份），让顾问称呼用户并调整分析角度
+  if (userProfile?.name || userProfile?.occupation) {
+    const parts: string[] = []
+    if (userProfile.name) parts.push(`姓名：${userProfile.name}`)
+    if (userProfile.occupation) parts.push(`身份：${userProfile.occupation}`)
+    context += `\n用户背景：${parts.join('，')}\n`
+  }
 
   // Include system-extracted context summary (what advisors already know)
   if (diagnosis.contextSummary?.length > 0) {

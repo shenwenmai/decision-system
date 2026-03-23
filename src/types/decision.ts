@@ -133,4 +133,5 @@ export interface Diagnosis {
   contextSummary: string[]
   probes: string[]
   probeOptions: string[][]
+  urgency?: '高' | '中' | '低' // Issue 15: Urgency dimension
 }

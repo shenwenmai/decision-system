@@ -14,6 +14,7 @@ interface HistoryEntry {
   advisors: AdvisorName[]
   verdict: string | null
   savedAt: string
+  outcome?: string | null // Issue 11: outcome tracking
 }
 
 function formatDate(iso: string) {
@@ -41,7 +42,7 @@ export default function HistoryPage() {
       const supabase = createClient()
       const { data, error } = await supabase
         .from('decisions')
-        .select('id, input, diagnosis, verdict, created_at')
+        .select('id, input, diagnosis, verdict, outcome, created_at')
         .order('created_at', { ascending: false })
         .limit(50)
       if (error) throw error
@@ -50,6 +51,7 @@ export default function HistoryPage() {
         input: string
         diagnosis: { coreQuestion?: string; activatedAdvisors?: AdvisorName[] } | null
         verdict: string | null
+        outcome?: string | null
         created_at: string
       }) => ({
         id: row.id,
@@ -57,6 +59,7 @@ export default function HistoryPage() {
         advisors: row.diagnosis?.activatedAdvisors ?? [],
         verdict: row.verdict,
         savedAt: row.created_at,
+        outcome: row.outcome, // Issue 11: Include outcome in entries
       }))
       setHistory(entries)
     } catch { /* ignore */ }
@@ -64,6 +67,22 @@ export default function HistoryPage() {
   }, [user])
 
   useEffect(() => { loadHistory() }, [loadHistory])
+
+  // Issue 11: Handle outcome updates
+  const updateOutcome = useCallback(async (decisionId: string, outcome: string) => {
+    try {
+      const res = await fetch(`/api/decisions/${decisionId}/outcome`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ outcome, outcome_note: '' }),
+      })
+      if (res.ok) {
+        setHistory(prev =>
+          prev.map(e => e.id === decisionId ? { ...e, outcome } : e)
+        )
+      }
+    } catch { /* ignore */ }
+  }, [])
 
   const clearHistory = async () => {
     if (!confirm('清空后不可恢复。确定要让这些记录消失吗？')) return
@@ -160,26 +179,53 @@ export default function HistoryPage() {
                       }
                       const tm = tag ? TAG_META[tag] : null
                       return (
-                        <div className="mt-2 flex items-center gap-1.5 flex-wrap">
-                          {tm ? (
-                            <span className="text-[11px] px-2.5 py-0.5 rounded-full border font-semibold flex items-center gap-1 flex-shrink-0"
-                              style={{ color: tm.color, backgroundColor: tm.bg, borderColor: tm.border }}>
-                              <span>{tm.icon}</span>{tag}
-                            </span>
-                          ) : (
-                            <span className="text-[10px] text-emerald-500 font-semibold">✓</span>
-                          )}
-                          {text && (
-                            <span className="text-[13px] font-medium leading-snug line-clamp-1"
-                              style={{ color: tm?.color ?? '#15803d' }}>
-                              {text}
-                            </span>
-                          )}
-                          {!text && !tm && (
-                            <span className="text-[13px] font-medium text-emerald-700 line-clamp-1">
-                              {entry.verdict}
-                            </span>
-                          )}
+                        <div className="mt-2 space-y-2">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {tm ? (
+                              <span className="text-[11px] px-2.5 py-0.5 rounded-full border font-semibold flex items-center gap-1 flex-shrink-0"
+                                style={{ color: tm.color, backgroundColor: tm.bg, borderColor: tm.border }}>
+                                <span>{tm.icon}</span>{tag}
+                              </span>
+                            ) : (
+                              <span className="text-[10px] text-emerald-500 font-semibold">✓</span>
+                            )}
+                            {text && (
+                              <span className="text-[13px] font-medium leading-snug line-clamp-1"
+                                style={{ color: tm?.color ?? '#15803d' }}>
+                                {text}
+                              </span>
+                            )}
+                            {!text && !tm && (
+                              <span className="text-[13px] font-medium text-emerald-700 line-clamp-1">
+                                {entry.verdict}
+                              </span>
+                            )}
+                          </div>
+                          {/* Issue 11: Outcome selector */}
+                          <div className="flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
+                            <span className="text-[10px] text-[var(--muted-foreground)]">结果:</span>
+                            {(['good', 'neutral', 'bad', 'pending'] as const).map(o => {
+                              const labels = { good: '好', neutral: '中', bad: '差', pending: '待定' }
+                              const colors = { good: '#15803d', neutral: '#b45309', bad: '#dc2626', pending: '#6b7280' }
+                              const bgs = { good: '#dcfce7', neutral: '#fef3c7', bad: '#fee2e2', pending: '#f3f4f6' }
+                              return (
+                                <button
+                                  key={o}
+                                  onClick={() => updateOutcome(entry.id, o)}
+                                  className={`text-[10px] px-2 py-0.5 rounded-full border font-medium transition-colors ${
+                                    entry.outcome === o ? 'opacity-100' : 'opacity-50 hover:opacity-75'
+                                  }`}
+                                  style={{
+                                    color: colors[o],
+                                    backgroundColor: entry.outcome === o ? bgs[o] : 'transparent',
+                                    borderColor: colors[o],
+                                  }}
+                                >
+                                  {labels[o]}
+                                </button>
+                              )
+                            })}
+                          </div>
                         </div>
                       )
                     })() : (

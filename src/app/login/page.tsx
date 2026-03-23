@@ -1,8 +1,12 @@
 'use client'
 
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useEffect } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
+
+const AUTH_ERROR_MESSAGES: Record<string, string> = {
+  link_expired: '登录链接已失效或已使用，请重新登录',
+}
 
 export default function LoginPage() {
   const { signInWithEmail, signUpWithEmail } = useAuth()
@@ -12,6 +16,14 @@ export default function LoginPage() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const router = useRouter()
+  const searchParams = useSearchParams()
+
+  useEffect(() => {
+    const errorCode = searchParams.get('error')
+    if (errorCode) {
+      setError(AUTH_ERROR_MESSAGES[errorCode] ?? '登录时出现问题，请重试')
+    }
+  }, [searchParams])
 
   const handleEmailAuth = async (e: React.FormEvent) => {
     e.preventDefault()

@@ -7,6 +7,7 @@ import {
   type UserSettings, type ConcernTag, type AdvisorName,
 } from '@/types/decision'
 import AdvisorAvatar from '@/components/AdvisorAvatar'
+import { useAuth } from '@/contexts/AuthContext'
 
 const CONCERN_TAGS: ConcernTag[] = ['财务风险', '职业发展', '人际关系', '家庭', '健康', '创业', '投资', '时间精力']
 
@@ -125,8 +126,10 @@ function DangerButton({ label, hint, onClick }: { label: string; hint: string; o
 
 export default function SettingsPage() {
   const router = useRouter()
+  const { user } = useAuth()
   const [s, setS] = useState<UserSettings>(DEFAULT_SETTINGS)
   const [saved, setSaved] = useState(false)
+  const [clearing, setClearing] = useState(false)
 
   useEffect(() => { setS(loadSettings()) }, [])
 
@@ -154,16 +157,31 @@ export default function SettingsPage() {
     update('pinnedAdvisors', next)
   }
 
-  const clearAllData = () => {
+  const clearAllData = async () => {
     if (!confirm('这会清除所有决策记录、分析内容和设置。清空后不可恢复，确定吗？')) return
-    // Clear all decision data
-    Object.keys(localStorage).forEach(key => {
-      if (key.startsWith('decision-') || key.startsWith('analysis-')) {
-        localStorage.removeItem(key)
+    setClearing(true)
+    try {
+      // 如果已登录，先删除云端数据
+      if (user) {
+        const res = await fetch('/api/decisions/clear', { method: 'DELETE' })
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}))
+          alert(`云端数据删除失败：${body.reason ?? '未知错误'}，本地数据已清除`)
+        }
       }
-    })
-    localStorage.removeItem('decision-history')
-    router.push('/')
+    } catch {
+      alert('网络错误，云端数据可能未完全删除，本地数据已清除')
+    } finally {
+      // 无论云端是否成功，都清除本地数据
+      Object.keys(localStorage).forEach(key => {
+        if (key.startsWith('decision-') || key.startsWith('analysis-')) {
+          localStorage.removeItem(key)
+        }
+      })
+      localStorage.removeItem('decision-history')
+      setClearing(false)
+      router.push('/')
+    }
   }
 
 
@@ -345,7 +363,10 @@ export default function SettingsPage() {
             <span className="text-xs px-2.5 py-1 rounded-full bg-[var(--muted)] text-[var(--muted-foreground)] font-medium">体验版</span>
           </Row>
           <Row label="专业版" hint="旗舰级模型，分析更深 · 决策更准，不限次数">
-            <button className="text-xs px-3 py-1.5 rounded-lg bg-[var(--primary)] text-white font-medium hover:bg-[#1E3A5F] transition-colors">
+            <button
+              onClick={() => alert('专业版即将上线，敬请期待！')}
+              className="text-xs px-3 py-1.5 rounded-lg bg-[var(--primary)] text-white font-medium hover:bg-[#1E3A5F] transition-colors"
+            >
               升级
             </button>
           </Row>
@@ -365,7 +386,7 @@ export default function SettingsPage() {
             </button>
           </div>
           <DangerButton
-            label="清除全部数据"
+            label={clearing ? '正在清除…' : '清除全部数据'}
             hint="清空所有决策记录和设置，恢复初始状态，不可撤销"
             onClick={clearAllData}
           />

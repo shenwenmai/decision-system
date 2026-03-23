@@ -46,7 +46,8 @@ export async function POST(request: NextRequest) {
       analysis: { ...existingAnalysis, userSignal: signal ?? null },
     }
     if (embedding) {
-      updatePayload.embedding = JSON.stringify(embedding)
+      // pgvector requires the array formatted as "[x1,x2,...]" — NOT JSON.stringify
+      updatePayload.embedding = `[${embedding.join(',')}]`
     }
 
     await supabase

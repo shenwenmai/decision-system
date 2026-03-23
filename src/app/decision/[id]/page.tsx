@@ -943,6 +943,8 @@ export default function DecisionPage({ params }: { params: Promise<{ id: string 
               if (a.phase === 'done' || a.phase === 'analyzing') setPhase(a.phase as 'done' | 'analyzing')
               if (a.verdictSaved) { setVerdictSaved(true); setSavedVerdictContent((a.savedVerdictContent as string) || '') }
               if (a.actionPlan) { setActionPlan(a.actionPlan as ActionPlan); planLoadedFromCacheRef.current = true }
+              // Issue 8: Restore decision mode from persisted analysis
+              if (a.decisionMode) setDecisionMode(a.decisionMode as any)
             }
             if (row.verdict) { setVerdictSaved(true); setSavedVerdictContent(row.verdict as string) }
           } else {
@@ -962,6 +964,8 @@ export default function DecisionPage({ params }: { params: Promise<{ id: string 
           if (a.collisionDone) setCollisionDone(true)
           if (a.phase === 'done' || a.phase === 'analyzing') setPhase(a.phase)
           if (a.verdictSaved) { setVerdictSaved(true); setSavedVerdictContent(a.savedVerdictContent || '') }
+          // Issue 8: Restore decision mode from sessionStorage
+          if (a.decisionMode) setDecisionMode(a.decisionMode)
         } catch { /* ignore */ }
       }
     }
@@ -1025,13 +1029,19 @@ export default function DecisionPage({ params }: { params: Promise<{ id: string 
       phase,
       verdictSaved,
       savedVerdictContent,
+      decisionMode, // Issue 8: Persist decision mode to sessionStorage
     })
     sessionStorage.setItem(`analysis-${id}`, payload)
-  }, [id, advisorStatements, collisionContent, collisionDone, phase, verdictSaved, savedVerdictContent])
+  }, [id, advisorStatements, collisionContent, collisionDone, phase, verdictSaved, savedVerdictContent, decisionMode])
 
   // ── Save to Supabase (upsert) ─────────────────────────────────────────────
   const saveToHistory = useCallback((verdictContent?: string) => {
     if (!data || !user) return
+    // 用户关闭「保存决策记录」时，不写入云端（数据留在 sessionStorage）
+    try {
+      const s = JSON.parse(localStorage.getItem('user-settings') || '{}')
+      if (s.saveHistory === false) return
+    } catch { /* 读取失败则默认保存 */ }
     const analysisPayload = {
       advisorStatements,
       collisionContent,
@@ -1040,6 +1050,7 @@ export default function DecisionPage({ params }: { params: Promise<{ id: string 
       verdictSaved: verdictContent !== undefined ? true : verdictSaved,
       savedVerdictContent: verdictContent ?? savedVerdictContent,
       actionPlan,
+      decisionMode, // Issue 8: Persist decision mode
     }
     const supabase = createClient()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1052,7 +1063,7 @@ export default function DecisionPage({ params }: { params: Promise<{ id: string 
       verdict: verdictContent ?? (verdictSaved ? savedVerdictContent : null) ?? null,
       updated_at: new Date().toISOString(),
     } as any, { onConflict: 'id' }).then(() => { /* fire and forget */ })
-  }, [data, id, user, advisorStatements, collisionContent, collisionDone, phase, verdictSaved, savedVerdictContent, actionPlan])
+  }, [data, id, user, advisorStatements, collisionContent, collisionDone, phase, verdictSaved, savedVerdictContent, actionPlan, decisionMode])
 
   // ── Initial analysis streaming ─────────────────────────────────────────────
   const runInitialAnalysis = useCallback(async (
@@ -1068,7 +1079,20 @@ export default function DecisionPage({ params }: { params: Promise<{ id: string 
       const response = await fetch('/api/decisions/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ input: contextInput, diagnosis, probeAnswers: answers, tier, outputMode: mode, historyContext: historyCtx ?? null }),
+        body: JSON.stringify({
+          input: contextInput,
+          diagnosis,
+          probeAnswers: answers,
+          tier,
+          outputMode: mode,
+          historyContext: historyCtx ?? null,
+          userProfile: (() => {
+            try {
+              const s = JSON.parse(localStorage.getItem('user-settings') || '{}')
+              return { name: s.name || '', occupation: s.occupation || '' }
+            } catch { return { name: '', occupation: '' } }
+          })(),
+        }),
       })
 
       const reader = response.body?.getReader()
@@ -1153,7 +1177,13 @@ export default function DecisionPage({ params }: { params: Promise<{ id: string 
           probeAnswers: {},
           tier,
           outputMode: 'concise',
-          targetAdvisors: targetAdvisors ?? undefined
+          targetAdvisors: targetAdvisors ?? undefined,
+          userProfile: (() => {
+            try {
+              const s = JSON.parse(localStorage.getItem('user-settings') || '{}')
+              return { name: s.name || '', occupation: s.occupation || '' }
+            } catch { return { name: '', occupation: '' } }
+          })(),
         }),
       })
 

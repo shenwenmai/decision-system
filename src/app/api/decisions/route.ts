@@ -8,6 +8,7 @@ import type { Diagnosis } from '@/types/decision'
 // ── 服务端构建 historyContext ─────────────────────────────────────────────────
 // Layer 1: user_profiles.style_summary（决策DNA）
 // Layer 2: pgvector 语义相似历史决策
+// Issue 16: Unified header structure
 async function buildHistoryContext(
   userId: string,
   queryText: string,
@@ -27,7 +28,7 @@ async function buildHistoryContext(
       .single()
 
     if (profile?.style_summary) {
-      parts.push(`【用户决策风格】${profile.style_summary}`)
+      parts.push(`决策风格：${profile.style_summary}`)
     }
   } catch {
     // 画像不存在时静默跳过
@@ -41,14 +42,15 @@ async function buildHistoryContext(
         .filter(d => d.coreQuestion || d.verdict)
         .map(d => `- 问题：${d.coreQuestion || '（未记录）'}；判断：${d.verdict?.slice(0, 80) ?? '（未落笔）'}`)
       if (lines.length > 0) {
-        parts.push(`【相似历史决策】\n${lines.join('\n')}`)
+        parts.push(`相似历史：\n${lines.join('\n')}`)
       }
     }
   } catch {
     // 向量检索失败时静默跳过
   }
 
-  return parts.join('\n\n')
+  if (parts.length === 0) return ''
+  return `【用户决策背景】\n${parts.join('\n')}`
 }
 
 export async function POST(request: NextRequest) {
@@ -57,6 +59,34 @@ export async function POST(request: NextRequest) {
 
     if (!input || input.trim().length === 0) {
       return NextResponse.json({ error: '请描述你的决策问题' }, { status: 400 })
+    }
+
+    // Issue 7: Rate limiting for free tier (2 decisions per day)
+    if (tier === 'free' && userId) {
+      try {
+        const supabase = createClient(
+          process.env.NEXT_PUBLIC_SUPABASE_URL!,
+          process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+        )
+
+        // Count decisions in the last 24 hours
+        const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+        const { count, error: countError } = await supabase
+          .from('decisions')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', userId)
+          .gt('updated_at', oneDayAgo)
+
+        if (!countError && count !== null && count >= 2) {
+          return NextResponse.json(
+            { error: '今日免费次数已用完，明天再来或升级专业版' },
+            { status: 429 }
+          )
+        }
+      } catch (rateLimitErr) {
+        // If rate limit check fails, log but allow through
+        console.error('[rate limit check error]', rateLimitErr)
+      }
     }
 
     const config = getEngineConfig(tier, byokConfig)
@@ -96,6 +126,15 @@ export async function POST(request: NextRequest) {
       if (!diagnosis.seenMoment && diagnosis.coreQuestion) {
         diagnosis.seenMoment = `你现在真正在问的，是：${diagnosis.coreQuestion}`
       }
+
+      // Issue 9: Ensure probeOptions matches probes length
+      if (diagnosis.probes && diagnosis.probeOptions) {
+        while (diagnosis.probeOptions.length < diagnosis.probes.length) {
+          diagnosis.probeOptions.push([])
+        }
+        diagnosis.probeOptions = diagnosis.probeOptions.slice(0, diagnosis.probes.length)
+      }
+
       console.log('[seenMoment]', diagnosis.seenMoment ?? '❌ 未返回')
     } catch (parseErr) {
       console.error('[diagnosis parse error]', parseErr, '\n[raw]', diagnosisRaw.slice(0, 400))

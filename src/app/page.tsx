@@ -6,6 +6,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
 import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/contexts/AuthContext'
+import { runRetentionOnce } from '@/lib/decisions/retention'
 
 // ─── Input quality signal ──────────────────────────────────────────────────
 
@@ -202,6 +203,11 @@ function HomeContent() {
 
   const quality = getInputQuality(input, context)
   const canSubmit = input.trim().length >= 10 && !loading
+
+  // ── 历史保留期清理（每个 session 执行一次）────────────────────────────────
+  useEffect(() => {
+    if (user?.id) runRetentionOnce(user.id)
+  }, [user?.id])
 
   // ── Speech recognition setup ───────────────────────────────────────────────
   useEffect(() => {
