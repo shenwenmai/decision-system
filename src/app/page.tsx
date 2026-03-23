@@ -333,7 +333,6 @@ function HomeContent() {
           engineLabel: data.engineLabel,
         })
         sessionStorage.setItem(`decision-${data.decisionId}`, decisionPayload)
-        localStorage.setItem(`decision-${data.decisionId}`, decisionPayload)
         router.push(`/decision/${data.decisionId}`)
       } else {
         setError('响应格式错误，请重试')

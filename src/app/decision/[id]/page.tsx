@@ -7,6 +7,8 @@ import { Textarea } from '@/components/ui/textarea'
 import { ADVISORS } from '@/types/decision'
 import type { AdvisorName, Diagnosis } from '@/types/decision'
 import AdvisorAvatar from '@/components/AdvisorAvatar'
+import { createClient } from '@/lib/supabase/client'
+import { useAuth } from '@/contexts/AuthContext'
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -833,6 +835,7 @@ function PrintModal({
 export default function DecisionPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
   const router = useRouter()
+  const { user } = useAuth()
   const [data, setData] = useState<DecisionData | null>(null)
   const [notFound, setNotFound] = useState(false)
 
@@ -895,38 +898,68 @@ export default function DecisionPage({ params }: { params: Promise<{ id: string 
   }, [])
 
   useEffect(() => {
-    // sessionStorage = same-tab fast access; localStorage = cross-tab fallback (history page)
-    const stored = sessionStorage.getItem(`decision-${id}`)
-      || localStorage.getItem(`decision-${id}`)
-    if (stored) {
-      const parsed = JSON.parse(stored)
-      console.log('%c[seenMoment]', 'color:orange;font-weight:bold', parsed?.diagnosis?.seenMoment ?? '❌ 无')
-      setData(parsed)
-    }
-    else setNotFound(true)
+    async function loadDecision() {
+      // 1. sessionStorage = same-tab fast access (new decision just submitted)
+      const stored = sessionStorage.getItem(`decision-${id}`)
+      if (stored) {
+        try {
+          const parsed = JSON.parse(stored)
+          console.log('%c[seenMoment]', 'color:orange;font-weight:bold', parsed?.diagnosis?.seenMoment ?? '❌ 无')
+          setData(parsed)
+        } catch { setNotFound(true); return }
+      } else {
+        // 2. Supabase fallback for cross-device / direct URL access
+        try {
+          const supabase = createClient()
+          const { data: rawRow } = await supabase
+            .from('decisions')
+            .select('*')
+            .eq('id', id)
+            .single()
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const row = rawRow as any
+          if (row) {
+            const diag = row.diagnosis as Record<string, unknown> | null
+            setData({
+              id: row.id,
+              input: row.input,
+              diagnosis: diag as unknown as Diagnosis,
+              engineTier: (diag?.engineTier as string) ?? 'free',
+              engineLabel: (diag?.engineLabel as string) ?? '',
+            })
+            // Restore analysis state from Supabase
+            const a = row.analysis as Record<string, unknown> | null
+            if (a) {
+              if (Array.isArray(a.advisorStatements) && a.advisorStatements.length) setAdvisorStatements(a.advisorStatements)
+              if (a.collisionContent) setCollisionContent(a.collisionContent as string)
+              if (a.collisionDone) setCollisionDone(true)
+              if (a.phase === 'done' || a.phase === 'analyzing') setPhase(a.phase as 'done' | 'analyzing')
+              if (a.verdictSaved) { setVerdictSaved(true); setSavedVerdictContent((a.savedVerdictContent as string) || '') }
+              if (a.actionPlan) { setActionPlan(a.actionPlan as ActionPlan); planLoadedFromCacheRef.current = true }
+            }
+            if (row.verdict) { setVerdictSaved(true); setSavedVerdictContent(row.verdict as string) }
+          } else {
+            setNotFound(true)
+          }
+        } catch { setNotFound(true) }
+        return
+      }
 
-    // ── Restore analysis state (sessionStorage first, then localStorage) ───
-    const savedAnalysis = sessionStorage.getItem(`analysis-${id}`)
-      || localStorage.getItem(`analysis-${id}`)
-    if (savedAnalysis) {
-      try {
-        const a = JSON.parse(savedAnalysis)
-        if (a.advisorStatements?.length) setAdvisorStatements(a.advisorStatements)
-        if (a.collisionContent) setCollisionContent(a.collisionContent)
-        if (a.collisionDone) setCollisionDone(true)
-        if (a.phase === 'done' || a.phase === 'analyzing') setPhase(a.phase)
-        if (a.verdictSaved) { setVerdictSaved(true); setSavedVerdictContent(a.savedVerdictContent || '') }
-      } catch { /* ignore */ }
+      // ── Restore analysis state from sessionStorage (same-tab) ───
+      const savedAnalysis = sessionStorage.getItem(`analysis-${id}`)
+      if (savedAnalysis) {
+        try {
+          const a = JSON.parse(savedAnalysis)
+          if (a.advisorStatements?.length) setAdvisorStatements(a.advisorStatements)
+          if (a.collisionContent) setCollisionContent(a.collisionContent)
+          if (a.collisionDone) setCollisionDone(true)
+          if (a.phase === 'done' || a.phase === 'analyzing') setPhase(a.phase)
+          if (a.verdictSaved) { setVerdictSaved(true); setSavedVerdictContent(a.savedVerdictContent || '') }
+        } catch { /* ignore */ }
+      }
     }
-
-    // ── Restore action plan if already generated ────────────────────────────
-    const savedPlan = localStorage.getItem(`action-plan-${id}`)
-    if (savedPlan) {
-      try {
-        setActionPlan(JSON.parse(savedPlan))
-        planLoadedFromCacheRef.current = true  // 标记：从缓存载入，需要滚动到方案
-      } catch { /* ignore */ }
-    }
+    loadDecision()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id])
 
   // ── Auto-skip probes if setting is off ─────────────────────────────────────
@@ -975,7 +1008,7 @@ export default function DecisionPage({ params }: { params: Promise<{ id: string 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [actionPlan, phase, collisionDone])
 
-  // ── Auto-save analysis state (sessionStorage for same-tab, localStorage for cross-tab) ──
+  // ── Auto-save analysis state (sessionStorage for same-tab) ──
   useEffect(() => {
     if (advisorStatements.length === 0 && phase === 'probing') return
     const payload = JSON.stringify({
@@ -987,27 +1020,32 @@ export default function DecisionPage({ params }: { params: Promise<{ id: string 
       savedVerdictContent,
     })
     sessionStorage.setItem(`analysis-${id}`, payload)
-    localStorage.setItem(`analysis-${id}`, payload)
   }, [id, advisorStatements, collisionContent, collisionDone, phase, verdictSaved, savedVerdictContent])
 
-  // ── Save to localStorage history ───────────────────────────────────────────
+  // ── Save to Supabase (upsert) ─────────────────────────────────────────────
   const saveToHistory = useCallback((verdictContent?: string) => {
-    if (!data) return
-    try {
-      const history = JSON.parse(localStorage.getItem('decision-history') || '[]')
-      const existing = history.findIndex((h: { id: string }) => h.id === id)
-      const entry = {
-        id,
-        coreQuestion: data.diagnosis.coreQuestion || data.input.slice(0, 80),
-        advisors: data.diagnosis.activatedAdvisors,
-        verdict: verdictContent ?? (existing >= 0 ? history[existing].verdict : null),
-        savedAt: new Date().toISOString(),
-      }
-      if (existing >= 0) history[existing] = entry
-      else history.unshift(entry)
-      localStorage.setItem('decision-history', JSON.stringify(history.slice(0, 30)))
-    } catch { /* ignore */ }
-  }, [data, id])
+    if (!data || !user) return
+    const analysisPayload = {
+      advisorStatements,
+      collisionContent,
+      collisionDone,
+      phase,
+      verdictSaved: verdictContent !== undefined ? true : verdictSaved,
+      savedVerdictContent: verdictContent ?? savedVerdictContent,
+      actionPlan,
+    }
+    const supabase = createClient()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    supabase.from('decisions').upsert({
+      id,
+      user_id: user.id,
+      input: data.input,
+      diagnosis: { ...data.diagnosis, engineTier: data.engineTier, engineLabel: data.engineLabel } as unknown as import('@/lib/supabase/types').Json,
+      analysis: analysisPayload as unknown as import('@/lib/supabase/types').Json,
+      verdict: verdictContent ?? (verdictSaved ? savedVerdictContent : null) ?? null,
+      updated_at: new Date().toISOString(),
+    } as any, { onConflict: 'id' }).then(() => { /* fire and forget */ })
+  }, [data, id, user, advisorStatements, collisionContent, collisionDone, phase, verdictSaved, savedVerdictContent, actionPlan])
 
   // ── Initial analysis streaming ─────────────────────────────────────────────
   const runInitialAnalysis = useCallback(async (
@@ -1240,7 +1278,7 @@ export default function DecisionPage({ params }: { params: Promise<{ id: string 
       const json = await res.json()
       if (json.ok) {
         setActionPlan(json.actionPlan)
-        try { localStorage.setItem(`action-plan-${id}`, JSON.stringify(json.actionPlan)) } catch { /* ignore */ }
+        // Action plan is persisted via the next saveToHistory call (included in analysis JSON)
         // 更新方案时不自动弹窗，用户留在当前页继续看
         if (!isUpdate) { /* 初次生成也不弹窗，内联展示 */ }
       } else if (isUpdate) {
@@ -1262,17 +1300,15 @@ export default function DecisionPage({ params }: { params: Promise<{ id: string 
   const handleExport = handleViewPlan
 
   // ── Delete decision ────────────────────────────────────────────────────────
-  const handleDeleteDecision = useCallback(() => {
+  const handleDeleteDecision = useCallback(async () => {
     if (!confirm('删除后不留任何痕迹，确定吗？')) return
-    // 清除所有与本次决策相关的存储（sessionStorage + localStorage 都清）
+    // Clear sessionStorage
     sessionStorage.removeItem(`decision-${id}`)
     sessionStorage.removeItem(`analysis-${id}`)
-    localStorage.removeItem(`decision-${id}`)
-    localStorage.removeItem(`analysis-${id}`)
+    // Delete from Supabase
     try {
-      const history = JSON.parse(localStorage.getItem('decision-history') || '[]')
-      const updated = history.filter((h: { id: string }) => h.id !== id)
-      localStorage.setItem('decision-history', JSON.stringify(updated))
+      const supabase = createClient()
+      await supabase.from('decisions').delete().eq('id', id)
     } catch { /* ignore */ }
     setShowPrintModal(false)
     router.push('/')
@@ -1472,9 +1508,9 @@ export default function DecisionPage({ params }: { params: Promise<{ id: string 
                 <div className="flex flex-col items-center gap-2">
                   <button
                     onClick={() => setShowVerdictInput(true)}
-                    className="text-sm px-5 py-2 rounded-full border border-[var(--primary)] text-[var(--primary)] hover:bg-[var(--primary)]/5 transition-colors"
+                    className="text-sm px-7 py-2.5 rounded-lg bg-[var(--primary)] text-white hover:bg-[#1E3A5F] transition-colors font-medium tracking-wide"
                   >
-                    {userName ? `${userName}，记录你的决定` : '记录我的决定'}
+                    {userName ? `${userName}，落笔记录` : '落笔，记录我的决定'}
                   </button>
                   <p className="text-[11px] text-[var(--muted-foreground)]/70 leading-relaxed text-center">
                     每次记录，顾问越来越懂你
@@ -1527,8 +1563,8 @@ export default function DecisionPage({ params }: { params: Promise<{ id: string 
                     <p className="text-[10px] text-[var(--muted-foreground)]/60 -mt-1">描述越具体，顾问越懂你</p>
                     <div className="flex gap-2 justify-end">
                       <button onClick={() => { setShowVerdictInput(false); setVerdictTag(''); setVerdictText('') }} className="text-xs text-[var(--muted-foreground)] px-3 py-1.5">取消</button>
-                      <button onClick={handleSaveVerdict} disabled={!canSave} className="text-xs bg-[var(--primary)] text-white px-4 py-1.5 rounded-lg disabled:opacity-40 transition-colors">
-                        确认
+                      <button onClick={handleSaveVerdict} disabled={!canSave} className="text-xs bg-[var(--primary)] text-white px-5 py-1.5 rounded-lg disabled:opacity-40 transition-colors font-medium tracking-wide">
+                        落笔存档
                       </button>
                     </div>
                   </div>
@@ -1550,9 +1586,9 @@ export default function DecisionPage({ params }: { params: Promise<{ id: string 
                 }
                 const tm = tag ? TAG_META[tag] : null
                 return (
-                  <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-5 py-4">
-                    <p className="text-xs text-emerald-600 mb-2 font-medium">已记录的决定</p>
-                    <div className="flex flex-wrap items-start gap-2">
+                  <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-5 py-5">
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className="text-[10px] text-emerald-500 tracking-widest font-semibold uppercase">已存档</span>
                       {tm && (
                         <span className="text-[11px] px-2.5 py-0.5 rounded-full border flex-shrink-0 font-semibold flex items-center gap-1"
                           style={{ color: tm.color, backgroundColor: tm.bg, borderColor: tm.border }}>
@@ -1560,9 +1596,22 @@ export default function DecisionPage({ params }: { params: Promise<{ id: string 
                           {tag}
                         </span>
                       )}
-                      {text && <p className="text-sm leading-relaxed text-emerald-900">「{text}」</p>}
-                      {!text && !tm && <p className="text-sm leading-relaxed text-emerald-900">「{savedVerdictContent}」</p>}
                     </div>
+                    {text && (
+                      <p className="text-[15px] leading-relaxed text-emerald-900 font-medium"
+                        style={{ fontFamily: 'Georgia, "Times New Roman", serif', fontStyle: 'italic' }}>
+                        「{text}」
+                      </p>
+                    )}
+                    {!text && !tm && (
+                      <p className="text-[15px] leading-relaxed text-emerald-900 font-medium"
+                        style={{ fontFamily: 'Georgia, "Times New Roman", serif', fontStyle: 'italic' }}>
+                        「{savedVerdictContent}」
+                      </p>
+                    )}
+                    {!text && tm && (
+                      <p className="text-xs text-emerald-600/70 mt-1">你选择了{tag}，但没有留下文字。</p>
+                    )}
                   </div>
                 )
               })()}

@@ -1,10 +1,12 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { ADVISORS } from '@/types/decision'
 import type { AdvisorName } from '@/types/decision'
+import { createClient } from '@/lib/supabase/client'
+import { useAuth } from '@/contexts/AuthContext'
 
 interface HistoryEntry {
   id: string
@@ -29,36 +31,48 @@ function formatDate(iso: string) {
 
 export default function HistoryPage() {
   const router = useRouter()
+  const { user } = useAuth()
   const [history, setHistory] = useState<HistoryEntry[]>([])
   const [loaded, setLoaded] = useState(false)
 
-  useEffect(() => {
+  const loadHistory = useCallback(async () => {
+    if (!user) { setLoaded(true); return }
     try {
-      const stored = localStorage.getItem('decision-history')
-      if (stored) {
-        const all: HistoryEntry[] = JSON.parse(stored)
-        // 过滤掉已无对应数据的僵尸记录
-        const valid = all.filter(entry =>
-          localStorage.getItem(`decision-${entry.id}`) !== null
-        )
-        // 如果有僵尸记录被清理掉，同步更新 localStorage
-        if (valid.length !== all.length) {
-          localStorage.setItem('decision-history', JSON.stringify(valid))
-        }
-        setHistory(valid)
-      }
+      const supabase = createClient()
+      const { data, error } = await supabase
+        .from('decisions')
+        .select('id, input, diagnosis, verdict, created_at')
+        .order('created_at', { ascending: false })
+        .limit(50)
+      if (error) throw error
+      const entries: HistoryEntry[] = (data ?? []).map((row: {
+        id: string
+        input: string
+        diagnosis: { coreQuestion?: string; activatedAdvisors?: AdvisorName[] } | null
+        verdict: string | null
+        created_at: string
+      }) => ({
+        id: row.id,
+        coreQuestion: row.diagnosis?.coreQuestion || row.input.slice(0, 80),
+        advisors: row.diagnosis?.activatedAdvisors ?? [],
+        verdict: row.verdict,
+        savedAt: row.created_at,
+      }))
+      setHistory(entries)
     } catch { /* ignore */ }
     setLoaded(true)
-  }, [])
+  }, [user])
 
-  const clearHistory = () => {
+  useEffect(() => { loadHistory() }, [loadHistory])
+
+  const clearHistory = async () => {
     if (!confirm('清空后不可恢复。确定要让这些记录消失吗？')) return
-    history.forEach(h => {
-      localStorage.removeItem(`decision-${h.id}`)
-      localStorage.removeItem(`analysis-${h.id}`)
-    })
-    localStorage.removeItem('decision-history')
-    setHistory([])
+    if (!user) return
+    try {
+      const supabase = createClient()
+      await supabase.from('decisions').delete().eq('user_id', user.id)
+      setHistory([])
+    } catch { /* ignore */ }
   }
 
   return (
@@ -88,7 +102,7 @@ export default function HistoryPage() {
           {history.length > 0 ? (
             <p className="text-sm text-[var(--muted-foreground)] mt-1.5 leading-relaxed">
               每一条，顾问们都认真对待过。<br />
-              <span className="text-xs">只在你的设备上，不在任何服务器里。</span>
+              <span className="text-xs">已同步到你的账号，跨设备可用。</span>
             </p>
           ) : (
             <p className="text-sm text-[var(--muted-foreground)] mt-1">还没有记录</p>
@@ -148,21 +162,29 @@ export default function HistoryPage() {
                       return (
                         <div className="mt-2 flex items-center gap-1.5 flex-wrap">
                           {tm ? (
-                            <span className="text-[10px] px-2 py-0.5 rounded-full border font-semibold flex items-center gap-1 flex-shrink-0"
+                            <span className="text-[11px] px-2.5 py-0.5 rounded-full border font-semibold flex items-center gap-1 flex-shrink-0"
                               style={{ color: tm.color, backgroundColor: tm.bg, borderColor: tm.border }}>
                               <span>{tm.icon}</span>{tag}
                             </span>
                           ) : (
                             <span className="text-[10px] text-emerald-500 font-semibold">✓</span>
                           )}
-                          {text && <span className="text-xs text-emerald-700 line-clamp-1">「{text}」</span>}
-                          {!text && !tm && <span className="text-xs text-emerald-700 line-clamp-1">「{entry.verdict}」</span>}
+                          {text && (
+                            <span className="text-[13px] font-medium leading-snug line-clamp-1"
+                              style={{ color: tm?.color ?? '#15803d' }}>
+                              {text}
+                            </span>
+                          )}
+                          {!text && !tm && (
+                            <span className="text-[13px] font-medium text-emerald-700 line-clamp-1">
+                              {entry.verdict}
+                            </span>
+                          )}
                         </div>
                       )
                     })() : (
                       <div className="mt-1.5 flex items-center gap-1">
-                        <span className="text-xs text-amber-500/90">还没记录决定</span>
-                        <span className="text-amber-400 text-sm leading-none">›</span>
+                        <span className="text-xs text-[var(--muted-foreground)]/70 italic">还在想</span>
                       </div>
                     )}
 
@@ -198,7 +220,7 @@ export default function HistoryPage() {
         {/* Note */}
         {loaded && history.length > 0 && (
           <p className="text-center text-xs text-[var(--muted-foreground)] mt-10 leading-relaxed">
-            这些只在你的设备上 · 不同步到任何地方
+            已加密存储 · 仅你可见
           </p>
         )}
 
