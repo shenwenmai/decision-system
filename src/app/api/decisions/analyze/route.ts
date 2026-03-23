@@ -11,9 +11,14 @@ export async function POST(request: NextRequest) {
 
   const config = getEngineConfig(tier, byokConfig)
   // targetAdvisors overrides routing (used for @ mentions)
-  const advisors: AdvisorName[] = (targetAdvisors && targetAdvisors.length > 0)
+  const baseAdvisors: AdvisorName[] = (targetAdvisors && targetAdvisors.length > 0)
     ? targetAdvisors
     : diagnosis.activatedAdvisors
+
+  // 「现实校准官」始终作为最后一位顾问注入，确保所有分析都有冷静校准层
+  const advisors: AdvisorName[] = baseAdvisors.includes('reality')
+    ? baseAdvisors
+    : [...baseAdvisors, 'reality']
 
   // Build context — include core question, system-extracted facts, and probe Q&A
   let context = `核心决策问题：${diagnosis.coreQuestion}\n\n用户原始描述：\n${input}\n`

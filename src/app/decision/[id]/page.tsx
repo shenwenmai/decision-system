@@ -1602,33 +1602,78 @@ export default function DecisionPage({ params }: { params: Promise<{ id: string 
                   if (savedVerdictContent.startsWith(t + ' · ')) { tag = t; text = savedVerdictContent.slice(t.length + 3); break }
                 }
                 const tm = tag ? TAG_META[tag] : null
+
+                // 7天后复盘日期
+                const followUpDate = (() => {
+                  const stored = sessionStorage.getItem(`decision-${id}`)
+                  if (stored) {
+                    try {
+                      const parsed = JSON.parse(stored)
+                      const base = parsed.verdictAt ? new Date(parsed.verdictAt) : new Date()
+                      const d = new Date(base.getTime() + 7 * 24 * 60 * 60 * 1000)
+                      return `${d.getMonth() + 1}月${d.getDate()}日`
+                    } catch { /* ignore */ }
+                  }
+                  const d = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+                  return `${d.getMonth() + 1}月${d.getDate()}日`
+                })()
+
                 return (
-                  <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-5 py-5">
-                    <div className="flex items-center gap-2 mb-3">
-                      <span className="text-[10px] text-emerald-500 tracking-widest font-semibold uppercase">已存档</span>
-                      {tm && (
-                        <span className="text-[11px] px-2.5 py-0.5 rounded-full border flex-shrink-0 font-semibold flex items-center gap-1"
-                          style={{ color: tm.color, backgroundColor: tm.bg, borderColor: tm.border }}>
-                          <span style={{ fontSize: '10px' }}>{tm.icon}</span>
-                          {tag}
-                        </span>
+                  <div className="space-y-3">
+                    {/* 决定存档卡 */}
+                    <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-5 py-5">
+                      <div className="flex items-center gap-2 mb-3">
+                        <span className="text-[10px] text-emerald-500 tracking-widest font-semibold uppercase">已存档</span>
+                        {tm && (
+                          <span className="text-[11px] px-2.5 py-0.5 rounded-full border flex-shrink-0 font-semibold flex items-center gap-1"
+                            style={{ color: tm.color, backgroundColor: tm.bg, borderColor: tm.border }}>
+                            <span style={{ fontSize: '10px' }}>{tm.icon}</span>
+                            {tag}
+                          </span>
+                        )}
+                      </div>
+                      {text && (
+                        <p className="text-[15px] leading-relaxed text-emerald-900 font-medium"
+                          style={{ fontFamily: 'Georgia, "Times New Roman", serif', fontStyle: 'italic' }}>
+                          「{text}」
+                        </p>
+                      )}
+                      {!text && !tm && (
+                        <p className="text-[15px] leading-relaxed text-emerald-900 font-medium"
+                          style={{ fontFamily: 'Georgia, "Times New Roman", serif', fontStyle: 'italic' }}>
+                          「{savedVerdictContent}」
+                        </p>
+                      )}
+                      {!text && tm && (
+                        <p className="text-xs text-emerald-600/70 mt-1">你选择了{tag}，但没有留下文字。</p>
                       )}
                     </div>
-                    {text && (
-                      <p className="text-[15px] leading-relaxed text-emerald-900 font-medium"
-                        style={{ fontFamily: 'Georgia, "Times New Roman", serif', fontStyle: 'italic' }}>
-                        「{text}」
-                      </p>
-                    )}
-                    {!text && !tm && (
-                      <p className="text-[15px] leading-relaxed text-emerald-900 font-medium"
-                        style={{ fontFamily: 'Georgia, "Times New Roman", serif', fontStyle: 'italic' }}>
-                        「{savedVerdictContent}」
-                      </p>
-                    )}
-                    {!text && tm && (
-                      <p className="text-xs text-emerald-600/70 mt-1">你选择了{tag}，但没有留下文字。</p>
-                    )}
+
+                    {/* ── 责任归属：这是你的选择 ─────────────────────────────── */}
+                    <div className="rounded-lg border border-[#e5e7eb] bg-[#f9fafb] px-5 py-4 flex items-start gap-3">
+                      <span className="text-base mt-0.5 select-none">🧭</span>
+                      <div>
+                        <p className="text-[12px] font-semibold text-[#374151] mb-0.5">这是你的选择</p>
+                        <p className="text-[11px] text-[#6b7280] leading-relaxed">
+                          顾问提供了分析框架——但决定权从始至终在你。<br/>
+                          选错了，是经验；选对了，是你的判断力。两种结果都属于你。
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* ── 7天后复盘提示 ──────────────────────────────────────── */}
+                    <div className="rounded-lg border border-[#e5e7eb] bg-[#f9fafb] px-5 py-4 flex items-start gap-3">
+                      <span className="text-base mt-0.5 select-none">📅</span>
+                      <div>
+                        <p className="text-[12px] font-semibold text-[#374151] mb-0.5">
+                          {followUpDate}，回来看看结果
+                        </p>
+                        <p className="text-[11px] text-[#6b7280] leading-relaxed">
+                          7天后，来历史记录里写下这个决定的进展——
+                          好的决定值得被记录，坏的决定更值得被复盘。
+                        </p>
+                      </div>
+                    </div>
                   </div>
                 )
               })()}

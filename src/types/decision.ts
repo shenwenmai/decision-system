@@ -1,6 +1,7 @@
 export type AdvisorName =
   | 'drucker' | 'jobs' | 'hara-kenya' | 'munger'
   | 'buffett' | 'musk' | 'welch' | 'bezos'
+  | 'reality'
 
 export type Stage = '感知期' | '定义期' | '决策期'
 export type EmotionWeight = '轻' | '中' | '重'
@@ -62,6 +63,11 @@ export const ADVISORS: Record<AdvisorName, Advisor> = {
     avatar: '/advisors/bezos.jpg',
     role: '最坏情况撑得住吗',
     detail: '他发明了"后悔最小化框架"——站在未来回头看，你会后悔没有做这件事吗？同时他会帮你测试：最坏的情况真的来了，你能不能承受？适合需要评估长期代价的决策。',
+  },
+  reality: {
+    name: 'reality', displayName: '现实校准', color: '#374151',
+    role: '数据说话，不说废话',
+    detail: '不给你安慰，只给你概率。从历史规律、失败案例、现实约束出发，告诉你这个决定真实的胜率、风险点、最坏情况。冷静而精准，是所有顾问里唯一不在乎你感受的那个。',
   },
 }
 
