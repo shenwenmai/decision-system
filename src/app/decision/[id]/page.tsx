@@ -852,6 +852,12 @@ export default function DecisionPage({ params }: { params: Promise<{ id: string 
   const [collisionDone, setCollisionDone] = useState(false)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
 
+  // ── 决策模式（由服务端自动识别后通过 SSE meta 事件传回）─────────────────────
+  const [decisionMode, setDecisionMode] = useState<{
+    mode: string
+    modeLabel: { label: string; desc: string; color: string }
+  } | null>(null)
+
   // 从 collisionContent 中解析出【收尾】部分
   const closingText = collisionDone ? (() => {
     const match = collisionContent.match(/【收尾】\s*([\s\S]+?)$/)
@@ -1086,6 +1092,12 @@ export default function DecisionPage({ params }: { params: Promise<{ id: string 
           try {
             const payload = JSON.parse(dataLine.slice(6))
             switch (event) {
+              case 'meta':
+                // 服务端发回的决策模式元数据（温柔/理性/严厉）
+                if (payload.mode && payload.modeLabel) {
+                  setDecisionMode({ mode: payload.mode, modeLabel: payload.modeLabel })
+                }
+                break
               case 'advisor_start':
                 setCurrentAdvisor(payload.advisor)
                 setAdvisorStatements(prev => [...prev, { advisor: payload.advisor, content: '', veto: false, done: false }])
@@ -1476,6 +1488,23 @@ export default function DecisionPage({ params }: { params: Promise<{ id: string 
       {/* ── Analysis + Follow-up phase ───────────────────────────────────────── */}
       {(phase === 'analyzing' || phase === 'done') && (
         <div className="flex-1 max-w-[680px] mx-auto w-full px-4 sm:px-5 py-8 pb-6">
+
+          {/* ── 决策模式标签（服务端自动识别，分析开始后显示）─────────────────── */}
+          {decisionMode && (
+            <div className="mb-4 flex items-center gap-2">
+              <span className="text-[10px] text-[var(--muted-foreground)] tracking-widest uppercase">决策模式</span>
+              <span
+                className="text-[11px] px-2.5 py-0.5 rounded-full border font-semibold tracking-wide"
+                style={{
+                  color: decisionMode.modeLabel.color,
+                  borderColor: decisionMode.modeLabel.color + '40',
+                  backgroundColor: decisionMode.modeLabel.color + '0f',
+                }}
+              >
+                {decisionMode.modeLabel.label} · {decisionMode.modeLabel.desc}
+              </span>
+            </div>
+          )}
 
           {/* ── 被看见 seenMoment ─────────────────────────────────────────────── */}
           {data.diagnosis.seenMoment && (
