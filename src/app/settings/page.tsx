@@ -359,16 +359,24 @@ export default function SettingsPage() {
         {/* ── 版本 ── */}
         <SectionTitle>版本</SectionTitle>
         <Card>
-          <Row label="当前版本" hint="每天可用 2 次">
-            <span className="text-xs px-2.5 py-1 rounded-full bg-[var(--muted)] text-[var(--muted-foreground)] font-medium">体验版</span>
+          <Row
+            label={s.engineTier === 'pro' ? '专业版（测试中）' : '体验版'}
+            hint={s.engineTier === 'pro' ? 'Opus 旗舰模型 · 不限次数' : '每天可用 2 次'}
+          >
+            <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${
+              s.engineTier === 'pro'
+                ? 'bg-[var(--primary)] text-white'
+                : 'bg-[var(--muted)] text-[var(--muted-foreground)]'
+            }`}>
+              {s.engineTier === 'pro' ? '专业版' : '体验版'}
+            </span>
           </Row>
-          <Row label="专业版" hint="旗舰级模型，分析更深 · 决策更准，不限次数">
-            <button
-              onClick={() => alert('专业版即将上线，敬请期待！')}
-              className="text-xs px-3 py-1.5 rounded-lg bg-[var(--primary)] text-white font-medium hover:bg-[#1E3A5F] transition-colors"
-            >
-              升级
-            </button>
+          {/* 内测切换开关 — 公开上线前隐藏此区块 */}
+          <Row label="切换引擎档位" hint="内测专用：在 Sonnet（体验版）和 Opus（专业版）之间切换">
+            <Toggle
+              on={s.engineTier === 'pro'}
+              onChange={v => update('engineTier', v ? 'pro' : 'free')}
+            />
           </Row>
         </Card>
 

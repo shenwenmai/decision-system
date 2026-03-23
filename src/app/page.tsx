@@ -325,6 +325,7 @@ function HomeContent() {
     //   Layer 2: pgvector 语义相似历史（越用越准）
     const settings = JSON.parse(localStorage.getItem('user-settings') || '{}')
     const useHistory = settings.advisorsReferenceHistory !== false
+    const tier = (settings.engineTier as 'free' | 'pro') ?? 'free'
 
     try {
       const res = await fetch('/api/decisions', {
@@ -332,7 +333,7 @@ function HomeContent() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           input: enrichedInput,
-          tier: 'free',
+          tier,
           userId: user?.id ?? null,
           useHistory,
           // Pass image separately so API can call vision

@@ -93,6 +93,8 @@ export interface UserSettings {
   // 分析方式
   showProbeQuestions: boolean
   analysisDepth: AnalysisDepth
+  // 引擎档位（内测用，公开后由付费状态控制）
+  engineTier: 'free' | 'pro'
 }
 
 export const DEFAULT_SETTINGS: UserSettings = {
@@ -106,6 +108,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
   pinnedAdvisors: [],
   showProbeQuestions: true,
   analysisDepth: 'standard',
+  engineTier: 'free',
 }
 
 export function loadSettings(): UserSettings {

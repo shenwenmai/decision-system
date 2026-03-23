@@ -20,7 +20,7 @@ export function getEngineConfig(tier: Tier, byokConfig?: { provider: string; mod
     case 'pro':
       return {
         provider: 'anthropic',
-        model: 'claude-sonnet-4-6',
+        model: 'claude-opus-4-6',   // 旗舰级，专业版专用
         apiKey: process.env.ANTHROPIC_API_KEY || '',
       }
     case 'byok':
