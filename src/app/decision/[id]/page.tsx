@@ -26,6 +26,7 @@ interface DecisionData {
   diagnosis: Diagnosis
   engineTier: string
   engineLabel: string
+  historyContext?: string | null
 }
 
 interface AdvisorStatement {
@@ -1054,13 +1055,14 @@ export default function DecisionPage({ params }: { params: Promise<{ id: string 
     answers: Record<string, string>,
     tier: string,
     mode: string,
+    historyCtx?: string | null,
   ) => {
     setIsAnalyzing(true)
     try {
       const response = await fetch('/api/decisions/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ input: contextInput, diagnosis, probeAnswers: answers, tier, outputMode: mode }),
+        body: JSON.stringify({ input: contextInput, diagnosis, probeAnswers: answers, tier, outputMode: mode, historyContext: historyCtx ?? null }),
       })
 
       const reader = response.body?.getReader()
@@ -1212,7 +1214,7 @@ export default function DecisionPage({ params }: { params: Promise<{ id: string 
     if (!data) return
     const answers = skipProbes ? {} : probeAnswers
     setPhase('analyzing')
-    await runInitialAnalysis(data.input, data.diagnosis, answers, data.engineTier, outputMode)
+    await runInitialAnalysis(data.input, data.diagnosis, answers, data.engineTier, outputMode, data.historyContext)
   }, [data, probeAnswers, outputMode, runInitialAnalysis])
 
   // ── Handle follow-up ───────────────────────────────────────────────────────
@@ -1329,6 +1331,21 @@ export default function DecisionPage({ params }: { params: Promise<{ id: string 
     setSavedVerdictContent(combined)
     setVerdictSaved(true)
     setShowVerdictInput(false)
+
+    // 异步更新用户画像（fire-and-forget，不阻断 UI）
+    if (user && data) {
+      fetch('/api/decisions/profile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          decisionId: id,
+          coreQuestion: data.diagnosis?.coreQuestion ?? '',
+          input: data.input ?? '',
+          verdict: combined,
+        }),
+      }).catch(() => { /* 画像更新失败不影响主流程 */ })
+    }
   }
 
   // ── Loading / Error states ─────────────────────────────────────────────────

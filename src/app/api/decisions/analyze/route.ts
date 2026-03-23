@@ -7,7 +7,7 @@ import type { AdvisorName } from '@/types/decision'
 export const maxDuration = 300
 
 export async function POST(request: NextRequest) {
-  const { input, diagnosis, probeAnswers, tier = 'free', byokConfig, outputMode = 'detailed', targetAdvisors } = await request.json()
+  const { input, diagnosis, probeAnswers, tier = 'free', byokConfig, outputMode = 'detailed', targetAdvisors, historyContext } = await request.json()
 
   const config = getEngineConfig(tier, byokConfig)
   // targetAdvisors overrides routing (used for @ mentions)
@@ -24,6 +24,11 @@ export async function POST(request: NextRequest) {
     diagnosis.contextSummary.forEach((fact: string) => {
       context += `· ${fact}\n`
     })
+  }
+
+  // Include user's decision history for continuity (if available)
+  if (historyContext) {
+    context += `\n${historyContext}\n`
   }
 
   // Include probe Q&A with actual question text (not just index keys)

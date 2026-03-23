@@ -246,7 +246,7 @@ export default function SettingsPage() {
             label="顾问参考历史决策"
             hint="让顾问了解你过去的选择方式，给出更有连贯性的建议"
           >
-            <span className="text-[10px] px-2 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-600 font-medium">即将上线</span>
+            <Toggle on={s.advisorsReferenceHistory} onChange={v => update('advisorsReferenceHistory', v)} />
           </Row>
           <Row label="历史保留时长" hint={s.saveHistory ? undefined : '需先开启"保存决策记录"'}>
             <select
@@ -265,7 +265,7 @@ export default function SettingsPage() {
 
         {/* 隐私说明紧跟记忆设置 */}
         <p className="mx-5 mt-2 text-xs text-[var(--muted-foreground)] leading-relaxed">
-          数据仅存储在本设备，不上传服务器。换设备或清除浏览器数据后，历史记录将不再可用。
+          数据已加密存储在云端，仅你可见。开启「顾问参考历史」后，顾问会在分析时参考你过去的决策方式。
         </p>
 
         {/* ── 第三层：顾问偏好 ── */}

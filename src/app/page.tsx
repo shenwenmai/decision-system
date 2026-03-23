@@ -4,6 +4,8 @@ import React, { useState, useRef, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
+import { createClient } from '@/lib/supabase/client'
+import { useAuth } from '@/contexts/AuthContext'
 
 // ─── Input quality signal ──────────────────────────────────────────────────
 
@@ -196,6 +198,7 @@ function HomeContent() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recognitionRef = useRef<any>(null)
   const router = useRouter()
+  const { user } = useAuth()
 
   const quality = getInputQuality(input, context)
   const canSubmit = input.trim().length >= 10 && !loading
@@ -310,6 +313,13 @@ function HomeContent() {
       attachedFile ? `\n\n附件内容（${attachedFile.name}）：\n${attachedFile.content}` : '',
     ].join('').trim()
 
+    // ── User context: 传给服务端，由服务端做向量检索 + 画像构建 ─────────────────
+    // 服务端拥有 VOYAGE_API_KEY，负责：
+    //   Layer 1: user_profiles 画像摘要
+    //   Layer 2: pgvector 语义相似历史（越用越准）
+    const settings = JSON.parse(localStorage.getItem('user-settings') || '{}')
+    const useHistory = settings.advisorsReferenceHistory !== false
+
     try {
       const res = await fetch('/api/decisions', {
         method: 'POST',
@@ -317,6 +327,8 @@ function HomeContent() {
         body: JSON.stringify({
           input: enrichedInput,
           tier: 'free',
+          userId: user?.id ?? null,
+          useHistory,
           // Pass image separately so API can call vision
           imageBase64: attachedImage?.base64 ?? null,
           imageName: attachedImage?.name ?? null,
@@ -331,6 +343,7 @@ function HomeContent() {
           diagnosis: data.diagnosis,
           engineTier: data.engineTier,
           engineLabel: data.engineLabel,
+          historyContext: data.historyContext ?? null,
         })
         sessionStorage.setItem(`decision-${data.decisionId}`, decisionPayload)
         router.push(`/decision/${data.decisionId}`)
